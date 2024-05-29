@@ -54,15 +54,41 @@ fn ec_curve_to_oid(alg: &EcCurve) -> Result<Vec<u8>, Error> {
 fn ec_curve_to_ckm(alg: &EcCurve) -> pkcs11_bindings::CK_MECHANISM_TYPE {
     match alg {
         EcCurve::P256 | EcCurve::P384 | EcCurve::P521 => CKM_EC_KEY_PAIR_GEN.into(),
-        EcCurve::Ed25519 => CKM_EC_EDWARDS_KEY_PAIR_GEN.into(),
-        EcCurve::X25519 => CKM_EC_MONTGOMERY_KEY_PAIR_GEN.into(),
+        EcCurve::Ed25519 => CKM_EC_EDWARDS_KEY_PAIR_GEN.into(), // todo
+        EcCurve::X25519 => CKM_EC_MONTGOMERY_KEY_PAIR_GEN.into(), //todo
     }
 }
 
+// Currently supporting generation only of ED25519 keys
+fn generate_edkey() -> Result<(SECKEYPrivateKey, SECKEYPublicKey), crate::Error>
+{
+    if (!nss::NSS_IsInitialized)
+    {
+        panic!("NSS is not initialised.");
+    }
 
+    // Get the PKCS11 slot
+    let slot = Slot::internal()?;
+    unsafe {
+        let sk: SECKEYPrivateKey = 
+            PK11_GenerateKeyPairWithOpFlags(
+                slot, 
+                CKM_EC_EDWARDS_KEY_PAIR_GEN, 
+                // no params
+                ptr::null_mut(),
+                PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE | PK11_ATTR_PUBLIC,
+                CKF_SIGN,
+                CKF_SIGN,
+                PK11_ATTR_SESSION |
+                PK11_ATTR_INSENSITIVE |
+                ptr::null_mut());
 
+        let pk: SECKEYPublicKey = SECKEYPublicKey::from_ptr(pk_ptr)?;
+        Ok((sk, pk))           
+    }
+}
 
-fn keygen(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error> {
+fn generateECKey(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error> {
     init();
 
     // Get the OID for the Curve
