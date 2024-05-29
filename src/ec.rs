@@ -59,46 +59,60 @@ fn ec_curve_to_ckm(alg: &EcCurve) -> pkcs11_bindings::CK_MECHANISM_TYPE {
     }
 }
 
-// Currently supporting generation only of ED25519 keys
-fn generate_edkey() -> Result<(SECKEYPrivateKey, SECKEYPublicKey), crate::Error>
+fn curve_supports_derivation(curve: EcCurve) -> bool
 {
+    match curve{
+        EcCurve::P256 | EcCurve::P384 | EcCurve::P521 => true,
+        EcCurve::Ed25519 => false,
+        EcCurve::X25519 => true,
+    }
+}
+
+fn curve_supports_signature(curve: EcCurve) -> bool
+{
+    match curve{
+        EcCurve::P256 | EcCurve::P384 | EcCurve::P521 => true,
+        EcCurve::Ed25519 => true,
+        EcCurve::X25519 => false,
+    }
+}
+
+pub fn generate_sign_keys(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error>
+{
+    if (!curve_supports_signature(curve))
+    {
+        panic!("Does not support key signature");
+    }
+    return generate_eckey(EcCurve, CKF_SIGN);
+}
+
+pub fn generate_derive_keys(curve: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error>
+{
+    if (!curve_supports_derivation(curve))
+    {
+        panic!("Does not support key derivation");
+    }
+
+    return generate_eckey(curve, CKF_DERIVE);
+}
+
+
+// Main private function
+fn generate_eckey(curve: EcCurve, flags: uint32) -> Result<(PrivateKey, PublicKey), crate::Error> {
+    
     if (!nss::NSS_IsInitialized)
     {
         panic!("NSS is not initialised.");
     }
 
-    // Get the PKCS11 slot
-    let slot = Slot::internal()?;
-    unsafe {
-        let sk: SECKEYPrivateKey = 
-            PK11_GenerateKeyPairWithOpFlags(
-                slot, 
-                CKM_EC_EDWARDS_KEY_PAIR_GEN, 
-                // no params
-                ptr::null_mut(),
-                PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE | PK11_ATTR_PUBLIC,
-                CKF_SIGN,
-                CKF_SIGN,
-                PK11_ATTR_SESSION |
-                PK11_ATTR_INSENSITIVE |
-                ptr::null_mut());
-
-        let pk: SECKEYPublicKey = SECKEYPublicKey::from_ptr(pk_ptr)?;
-        Ok((sk, pk))           
-    }
-}
-
-fn generateECKey(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error> {
-    init();
-
     // Get the OID for the Curve
-    let curve_oid = ec_curve_to_oid(&alg)?;
+    let curve_oid = ec_curve_to_oid(&curve)?;
     let oid_bytes = object_id(&curve_oid)?;
     let mut oid = SECItemBorrowed::wrap(&oid_bytes);
     let oid_ptr: *mut SECItem = oid.as_mut();
 
     // Get the Mechanism based on the Curve and its use
-    let ckm = ec_curve_to_ckm(&alg);
+    let ckm = ec_curve_to_ckm(&curve);
 
     // Get the PKCS11 slot
     let slot = Slot::internal()?;
@@ -117,8 +131,8 @@ fn generateECKey(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error> 
                 oid_ptr.cast(),
                 &mut pk_ptr,
                 PK11_ATTR_EXTRACTABLE | PK11_ATTR_INSENSITIVE | PK11_ATTR_SESSION,
-                CKF_DERIVE,
-                CKF_DERIVE,
+                flags,
+                flags,
                 ptr::null_mut(),
             )
             .into_result()?;
