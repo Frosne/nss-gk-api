@@ -5,11 +5,11 @@
 // except according to those terms.
 
 use crate::der;
-use crate::err::IntoResult;
+use crate::err::{IntoResult, Res};
 use crate::init;
 use crate::p11::{PrivateKey, PublicKey};
 use crate::Error;
-use std::ptr;
+use std::ptr::{self, null};
 
 use crate::p11::PK11_GenerateKeyPairWithOpFlags;
 use crate::p11::Slot;
@@ -77,7 +77,94 @@ fn curve_supports_signature(curve: EcCurve) -> bool
     }
 }
 
-pub fn generate_sign_keys(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error>
+
+fn key_supports_signature(key: SECKEYPrivateKey) -> bool
+{
+    return true;
+}
+
+fn key_supports_verification(key: SECKEYPublicKey) -> bool
+{
+    return  true;
+}
+
+fn key_requires_hashing(key:SECKEYPrivateKey) -> Result<bool, crate::Error>
+{
+    // https://searchfox.org/mozilla-central/source/security/nss/lib/cryptohi/keythi.h#233
+    if (key.keyType == edKey)
+    {
+        return Ok(false);
+    }
+    
+    if (key.keyType == ecKey)
+    {
+        return Ok(true);
+    } 
+
+    return Error();
+}
+
+fn key_get_mechanism_sign(key: SECKEYPrivateKey) -> Result <u32, crate::Error>
+{
+    let t = PK11_MapSignKeyType(key);
+    if (t != CKM_INVALID_MECHANISM)
+    {
+        return PK(t);
+    }
+
+    return Error();
+
+}
+
+type bytes = Vec<u8>;
+
+enum Hash {
+    // for instance
+    SHA256,
+    SHA384   
+}
+
+// https://searchfox.org/mozilla-central/source/dom/crypto/WebCryptoCommon.h#165
+fn getHashOID(h: Hash) -> Result<uint32, crate::Error>
+{
+    match h{
+        Hash::SHA256 => CKM_SHA256,
+        Hash::SHA384 => CKM_SHA384
+
+    }
+}
+
+
+pub fn sign(key: SECKEYPrivateKey, toSign: bytes, hashFun: Option<Hash>) -> Result<bytes, crate::Error>
+{
+    // TODO: is it done in Pkcs11 layer and we don't care? 
+    if (!key_supports_signature(key))
+    {
+        panic!("The key does not support signature")
+    }
+
+    let data = toSign;
+    if (key_requires_hashing(key))
+    {
+
+        // pointer for hash SecItem
+        let mut hash_ptr = ptr::null_mut();
+        PK11_HashBuf(getHashOID(hashFun), hash_ptr, toSign, toSign.len());
+    }
+
+    // pointer for sign SecItem
+    let mut sig_ptr = ptr::null_mut();
+
+    // need checking the result
+    PK11_SignWithMechanism(key, key_get_mechanism_sign(key), ptr::null_mut(), sig_ptr, toSign);
+
+    let signature = bytes::from_ptr(sig_ptr)?;
+    Ok(signature)
+
+
+}
+
+pub fn generate_sign_keys(alg: EcCurve) -> Result<(SECKEYPrivateKey, SECKEYPublicKey), crate::Error>
 {
     if (!curve_supports_signature(curve))
     {
@@ -86,7 +173,7 @@ pub fn generate_sign_keys(alg: EcCurve) -> Result<(PrivateKey, PublicKey), crate
     return generate_eckey(EcCurve, CKF_SIGN);
 }
 
-pub fn generate_derive_keys(curve: EcCurve) -> Result<(PrivateKey, PublicKey), crate::Error>
+pub fn generate_derive_keys(curve: EcCurve) -> Result<(SECKEYPrivateKey, SECKEYPublicKey), crate::Error>
 {
     if (!curve_supports_derivation(curve))
     {
@@ -98,7 +185,7 @@ pub fn generate_derive_keys(curve: EcCurve) -> Result<(PrivateKey, PublicKey), c
 
 
 // Main private function
-fn generate_eckey(curve: EcCurve, flags: uint32) -> Result<(PrivateKey, PublicKey), crate::Error> {
+fn generate_eckey(curve: EcCurve, flags: uint32) -> Result<(SECKEYPrivateKey, SECKEYPublicKey), crate::Error> {
     
     if (!nss::NSS_IsInitialized)
     {
@@ -122,7 +209,7 @@ fn generate_eckey(curve: EcCurve, flags: uint32) -> Result<(PrivateKey, PublicKe
 
     // https://github.com/mozilla/nss-gk-api/issues/1
     unsafe {
-        let sk =
+        let sk: SECKeyPrivateKey=
             // Type of `param` argument depends on mechanism. For EC keygen it is
             // `SECKEYECParams *` which is a typedef for `SECItem *`.
             PK11_GenerateKeyPairWithOpFlags(
@@ -137,7 +224,7 @@ fn generate_eckey(curve: EcCurve, flags: uint32) -> Result<(PrivateKey, PublicKe
             )
             .into_result()?;
 
-        let pk = PublicKey::from_ptr(pk_ptr)?;
+        let pk : SECKEYPublicKey = SECKEYPublicKey::from_ptr(pk_ptr)?;
 
         Ok((sk, pk))
     }
