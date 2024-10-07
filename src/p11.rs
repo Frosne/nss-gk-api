@@ -12,7 +12,7 @@
 use crate::err::{secstatus_to_res, Error, Res};
 use crate::util::SECItemMut;
 
-use pkcs11_bindings::CKA_VALUE;
+use pkcs11_bindings::{CKA_VALUE, CKA_EC_POINT};
 
 use std::convert::TryFrom;
 use std::os::raw::{c_int, c_uint};
@@ -54,25 +54,24 @@ scoped_ptr!(PublicKey, SECKEYPublicKey, SECKEY_DestroyPublicKey);
 impl_clone!(PublicKey, SECKEY_CopyPublicKey);
 
 impl PublicKey {
-    /// Get the HPKE serialization of the public key.
+    /// Get the bits of the public key.
     ///
     /// # Errors
-    /// When the key cannot be exported, which can be because the type is not supported.
+    /// When the key cannot be exported, which can be because the type is not supported
+    /// or because the key data cannot be extracted from the PKCS#11 module.
     /// # Panics
-    /// When keys are too large to fit in `c_uint/usize`.  So only on programming error.
+    /// When the values are too large to fit.  So never.
     pub fn key_data(&self) -> Res<Vec<u8>> {
-        let mut buf = vec![0; 100];
-        let mut len: c_uint = 0;
+        let mut key_item = SECItemMut::make_empty();
         secstatus_to_res(unsafe {
-            PK11_HPKE_Serialize(
-                **self,
-                buf.as_mut_ptr(),
-                &mut len,
-                c_uint::try_from(buf.len()).unwrap(),
+            PK11_ReadRawAttribute(
+                PK11ObjectType::PK11_TypePubKey,
+                (**self).cast(),
+                CKA_EC_POINT,
+                key_item.as_mut(),
             )
         })?;
-        buf.truncate(usize::try_from(len).unwrap());
-        Ok(buf)
+        Ok(key_item.as_slice().to_owned())
     }
 }
 
