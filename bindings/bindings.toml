@@ -172,6 +172,7 @@ functions = [
     "PK11_FreeSlot",
     "PK11_FreeSymKey",
     "PK11_GenerateKeyPairWithOpFlags",
+    "PK11_GenerateKeyPair",
     "PK11_GenerateRandom",
     "PK11_GetBlockSize",
     "PK11_GetInternalSlot",
@@ -185,6 +186,7 @@ functions = [
     "PK11_PubDeriveWithKDF",
     "PK11_ReadRawAttribute",
     "PK11_ReferenceSymKey",
+    "PK11_SignatureLen",
     "PK11_SignWithMechanism",
     "PK11_VerifyWithMechanism",
     "PK11_WrapPrivKey",
@@ -224,6 +226,9 @@ variables = [
     "PK11_ATTR_SESSION",
     "SEC_ASN1_OBJECT_ID",
     "SHA256_LENGTH",
+    "KU_ALL",
+    "CKM_ECDSA",
+    "CKM_EDDSA",
 ]
 
 [nspr_err]
