@@ -138,7 +138,7 @@ impl SymKey {
     ///
     /// # Errors
     /// Internal errors in case of failures in NSS.
-    pub fn as_bytes(&self) -> Res<&[u8]> {
+    pub fn key_data(&self) -> Res<&[u8]> {
         secstatus_to_res(unsafe { PK11_ExtractKeyValue(**self) })?;
 
         let key_item = unsafe { PK11_GetKeyData(**self) };
@@ -152,7 +152,7 @@ impl SymKey {
 
 impl std::fmt::Debug for SymKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if let Ok(b) = self.as_bytes() {
+        if let Ok(b) = self.key_data() {
             write!(f, "SymKey {}", hex_with_len(b))
         } else {
             write!(f, "Opaque SymKey")
