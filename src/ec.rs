@@ -10,6 +10,7 @@ use crate::init;
 use crate::p11::PK11_ExportDERPrivateKeyInfo;
 use crate::p11::PK11_ImportDERPrivateKeyInfoAndReturnKey;
 use crate::p11::PK11_PubDeriveWithKDF;
+use crate::p11::PK11_ImportPublicKey;
 use crate::p11::SECKEY_DecodeDERSubjectPublicKeyInfo;
 use crate::p11::PK11_SignatureLen;
 use crate::p11::Slot;
@@ -59,20 +60,30 @@ pub fn import_ec_private_key_pkcs8(pki: &[u8]) -> Result<PrivateKey, Error> {
 }
 
 
-pub fn import_ec_public_key_spki(spki: &[u8]) -> Result<PublicKey, Error> {
+pub fn import_ec_public_key_from_spki(spki: &[u8]) -> Result<PublicKey, Error> {
+    init();
     let mut spki_item = SECItemBorrowed::wrap(&spki);
     let spki_item_ptr = spki_item.as_mut();
-
+    let slot = Slot::internal()?;
     unsafe {
         let spki = SECKEY_DecodeDERSubjectPublicKeyInfo(spki_item_ptr)
             .into_result()
             .unwrap();
-        let pk = crate::p11::SECKEY_ExtractPublicKey(spki.as_mut().unwrap())
+        let pk: PublicKey = crate::p11::SECKEY_ExtractPublicKey(spki.as_mut().unwrap())
             .into_result()
             .unwrap();
+
+        let handle = PK11_ImportPublicKey(*slot, *pk, PR_FALSE);
+        if handle == pkcs11_bindings::CK_INVALID_HANDLE
+        {
+            return Err(Error::InvalidInput)
+        }
+
         Ok(pk)
     }
 }
+
+
 
 pub fn ecdh(sk: PrivateKey, pk: PublicKey) -> Result<Vec<u8>, Error> {
     let sym_key = unsafe {
