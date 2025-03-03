@@ -63,6 +63,7 @@ pub const PR_TRUE: PRBool = prtypes::PR_TRUE as PRBool;
 enum NssLoaded {
     External,
     NoDb,
+    #[allow(dead_code)]
     Db(Box<Path>),
 }
 
